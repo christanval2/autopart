@@ -3,14 +3,15 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import * as path from 'path';
 import { env } from './env';
 
-// Chemin absolu explicite pour éviter les problèmes de résolution __dirname sur Windows
-const ENTITIES = [
-  path.resolve('src', 'entities', '**', '*.{ts,js}'),
-];
-// Les migrations vivent à la racine du projet (dossier migrations/)
-const MIGRATIONS = [
-  path.resolve('migrations', '**', '*.{ts,js}'),
-];
+// Chemins résolus depuis le CWD — en production le code vit dans dist/
+// (tsc outDir) : entités et migrations y sont chargées en JS.
+const isProd = process.env.NODE_ENV === 'production';
+const ENTITIES = isProd
+  ? [path.resolve('dist', 'src', 'entities', '**', '*.js')]
+  : [path.resolve('src', 'entities', '**', '*.{ts,js}')];
+const MIGRATIONS = isProd
+  ? [path.resolve('dist', 'migrations', '**', '*.js')]
+  : [path.resolve('migrations', '**', '*.{ts,js}')];
 
 const baseOptions: DataSourceOptions = {
   type:      'postgres',
@@ -18,6 +19,12 @@ const baseOptions: DataSourceOptions = {
   entities:  ENTITIES,
   migrations:MIGRATIONS,
   logging:   env.DB_LOGGING ? ['query', 'error'] : ['error'],
+  // SSL requis par les Postgres managés (Neon, Render, Supabase) ; les
+  // URLs locales n'en ont pas. rejectUnauthorized off : les offres
+  // gratuites utilisent des certificats non rootés dans Node.
+  ssl: env.DATABASE_URL.includes('localhost') || env.DATABASE_URL.includes('127.0.0.1')
+    ? false
+    : { rejectUnauthorized: false },
   extra: {
     min: env.DB_POOL_MIN,
     max: env.DB_POOL_MAX,

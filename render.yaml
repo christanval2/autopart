@@ -1,0 +1,65 @@
+# ── Déploiement Render — backend AutoParts ─────────────────────
+# Créer le service depuis le dashboard Render (Blueprint ou Web Service)
+# pointant sur ce repo. Variables sensibles à renseigner dans le
+# dashboard (jamais dans ce fichier) : DATABASE_URL, REDIS_URL,
+# GROQ_API_KEY, SMTP_*, CLOUDINARY_*, GOOGLE_*, JWT secrets…
+services:
+  - type: web
+    name: autoparts-api
+    runtime: node
+    plan: free
+    rootDir: autoparts-backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # ── À renseigner dans le dashboard Render ──
+      - key: DATABASE_URL        # Neon : postgresql://…?sslmode=require
+        sync: false
+      - key: REDIS_URL           # Upstash : rediss://…
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: APP_URL             # https://autoparts-api.onrender.com
+        sync: false
+      - key: ALLOWED_ORIGINS     # https://<ton-app>.vercel.app
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: GEOAPIFY_API_KEY
+        sync: false
+      - key: OCR_API_KEY
+        sync: false
+      - key: CAR_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false

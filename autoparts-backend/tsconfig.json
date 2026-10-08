@@ -24,6 +24,6 @@
       "@jobs/*":      ["src/jobs/*"]
     }
   },
-   "include": ["src/**/*", "tests/**/*"],
+   "include": ["src/**/*", "migrations/**/*"],
    "exclude": ["node_modules", "dist"]
 }
