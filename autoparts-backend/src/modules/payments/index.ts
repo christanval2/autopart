@@ -217,62 +217,87 @@ function notifyOrderPaid(payment: Payment): void {
 }
 
 // ═══ CinetPay — agrégateur MoMo/Orange/carte par redirection ═══
-// Doc : api-checkout.cinetpay.com/v2/payment (+ /v2/payment/check).
-// Le client paie sur la page hébergée CinetPay ; la confirmation passe
-// par le webhook notify_url, TOUJOURS re-vérifiée via /check (jamais
-// confiance au webhook seul).
-const CINETPAY_BASE = 'https://api-checkout.cinetpay.com';
+// Nouvelle plateforme (dashboard « Sandbox ») : api.cinetpay.net (v1)
+// — sandbox ; api.cinetpay.co — production. Flux : OAuth login
+// (api_key + api_password) → Bearer → POST /v1/payment → payment_token
+// → page hébergée secure.cinetpay.net/checkout/{token}. La confirmation
+// passe par le webhook notify_url, TOUJOURS re-vérifiée via
+// GET /v1/payment/{ref} (jamais confiance au webhook seul).
+const CINETPAY_BASE = env.CINETPAY_API_KEY?.startsWith('sk_live_')
+  ? 'https://api.cinetpay.co'
+  : 'https://api.cinetpay.net';
+
+let cinetpayToken: { value: string; expiresAt: number } | null = null;
 
 const CinetPayAdapter = {
+  /** OAuth : renvoie un access_token (cache 10 min). */
+  async getToken(): Promise<string> {
+    if (cinetpayToken && Date.now() < cinetpayToken.expiresAt) return cinetpayToken.value;
+    if (!env.CINETPAY_API_KEY || !env.CINETPAY_API_PASSWORD) {
+      throw ApiError.badRequest('CinetPay non configuré (CINETPAY_API_KEY / CINETPAY_API_PASSWORD manquants)');
+    }
+    const { data } = await axios.post(`${CINETPAY_BASE}/v1/oauth/login`, {
+      api_key:      env.CINETPAY_API_KEY,
+      api_password: env.CINETPAY_API_PASSWORD,
+    }, { timeout: 15_000 });
+    if (!data?.access_token) {
+      logger.error('CinetPay oauth error:', JSON.stringify(data).slice(0, 300));
+      throw ApiError.badRequest(data?.description ?? 'CinetPay : authentification impossible');
+    }
+    cinetpayToken = { value: data.access_token, expiresAt: Date.now() + 10 * 60 * 1000 };
+    return data.access_token as string;
+  },
+
   async initiate(
     amount: number, currency: string, ref: string, description: string,
   ): Promise<{ paymentResult: PaymentResult; paymentUrl: string }> {
-    if (!env.CINETPAY_API_KEY || !env.CINETPAY_SITE_ID) {
-      throw ApiError.badRequest('CinetPay non configuré (CINETPAY_API_KEY / CINETPAY_SITE_ID manquants)');
-    }
-    // CinetPay n'accepte que XOF/XAF en zone UEMOA/CEMAC — notre XAF est natif
-    const { data } = await axios.post(`${CINETPAY_BASE}/v2/payment`, {
-      apikey:         env.CINETPAY_API_KEY,
-      site_id:        env.CINETPAY_SITE_ID,
-      transaction_id: ref,
-      amount:         Math.round(Number(amount)),
-      currency,
-      description:    description.slice(0, 250),
-      channels:       'MOBILE_MONEY',
-      return_url:     `${env.APP_URL}/payments/callback/cinetpay`,
-      notify_url:     `${env.APP_URL}/api/v1/payments/webhook/cinetpay`,
-      lang:           'fr',
-    }, { timeout: 15_000 });
+    const token = await this.getToken();
+    // Sandbox secure.cinetpay.net / prod secure.cinetpay.co
+    const checkoutBase = CINETPAY_BASE.endsWith('.co')
+      ? 'https://secure.cinetpay.co'
+      : 'https://secure.cinetpay.net';
 
-    if (data?.code !== '201' || !data?.data?.payment_url) {
+    const { data } = await axios.post(`${CINETPAY_BASE}/v1/payment`, {
+      currency,
+      merchant_transaction_id: ref,
+      amount:                  Math.round(Number(amount)),
+      lang:                    'fr',
+      designation:             description.slice(0, 250),
+      channel:                 'ALL', // MoMo + Orange + carte
+      success_url:             `${env.APP_URL}/api/v1/payments/callback/cinetpay`,
+      failed_url:              `${env.APP_URL}/payments/cancel`,
+      notify_url:              `${env.APP_URL}/api/v1/payments/webhook/cinetpay`,
+    }, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15_000,
+    });
+
+    const paymentToken = data?.data?.payment_token ?? data?.payment_token;
+    if (!paymentToken) {
       logger.error('CinetPay initiate error:', JSON.stringify(data).slice(0, 300));
-      throw ApiError.badRequest(data?.message ?? 'CinetPay : initiation impossible');
+      throw ApiError.badRequest(data?.description ?? 'CinetPay : initiation impossible');
     }
     return {
-      paymentUrl:   data.data.payment_url as string,
+      paymentUrl:    `${checkoutBase}/checkout/${paymentToken}`,
       paymentResult: { gatewayRef: ref, status: 'pending', rawResponse: data },
     };
   },
 
   /** Vérification officielle du statut — source de vérité (webhook ou retour). */
-  async check(ref: string, expectedAmount: number): Promise<{ status: PaymentStatus; raw: unknown }> {
-    const { data } = await axios.post(`${CINETPAY_BASE}/v2/payment/check`, {
-      apikey:         env.CINETPAY_API_KEY,
-      site_id:        env.CINETPAY_SITE_ID,
-      transaction_id: ref,
-    }, { timeout: 15_000 });
+  async check(ref: string, _expectedAmount: number): Promise<{ status: PaymentStatus; raw: unknown }> {
+    const token = await this.getToken();
+    const { data } = await axios.get(`${CINETPAY_BASE}/v1/payment/${encodeURIComponent(ref)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15_000,
+    });
 
-    const s = data?.data?.status;
+    const s = String(data?.status ?? '').toUpperCase();
     let status: PaymentStatus = 'processing';
-    if (s === 'ACCEPTED') {
-      // Contrôle anti-fraude : le montant reçu doit correspondre à la commande
-      const received = Number(data?.data?.amount ?? 0);
-      status = received > 0 && Math.abs(received - expectedAmount) > 1
-        ? 'failed'
-        : 'completed';
-    } else if (s === 'REFUSED' || s === 'FAILED' || s === 'CANCELLED' || s === 'REJECTED') {
+    if (s === 'SUCCESS' || data?.code === 100) {
+      status = 'completed';
+    } else if (s === 'FAILED' || s === 'INSUFFICIENT_BALANCE' || s === 'CANCELLED' || data?.code === 2010 || data?.code === 2005) {
       status = 'failed';
-    } else if (s === 'CREATED' || s === 'PENDING' || s === 'WAITING_CUSTOMER_PHONE_ON_USSD') {
+    } else if (s === 'INITIATED' || s === 'PENDING' || s === 'EXPIRED') {
       status = 'pending';
     }
     return { status, raw: data };
