@@ -1,0 +1,122 @@
+@startuml sequence-ajouter-produit
+skinparam shadowing false
+skinparam actorFontSize 15
+skinparam participantFontSize 15
+skinparam messageFontSize 14
+skinparam ArrowThickness 1.5
+autonumber
+
+title Ajouter produit (vendeur)
+
+actor "Vendeur" as V
+participant "Système" as SY
+database "SGBD" as DB
+participant "Cloudinary" as CD
+
+ref over V, SY, DB : s'authentifier()
+
+V -> SY : Cliquer sur « Ajouter produit »
+SY -> SY : Vérifier les droits de vente de l'organisation (canSell)
+
+alt organisation autorisée à vendre
+  SY --> V : Afficher le formulaire produit
+
+  opt pré-remplissage OCR (optionnel)
+    V -> SY : Photographier l'étiquette de la pièce
+    SY -> SY : Analyser l'image (OCR)
+    SY --> V : Pré-remplir la référence OEM détectée
+  end
+
+  V -> SY : Remplir et soumettre (nom, prix, catégorie, marque)
+  SY -> SY : Valider les données (Zod)
+
+  alt informations valides
+    SY -> SY : Générer la référence SKU automatiquement
+    note right
+      SKU unique généré par le système :
+      l'index unique en base reste la garantie
+      (409 en cas de collision improbable).
+    end note
+    SY -> SY : Vérifier le type d'organisation (API)
+
+    alt organisation autorisée (importateur / grossiste ou canSell)
+      SY -> DB : Enregistrer le produit (INSERT)
+      DB --> SY : Produit créé (201)
+      note right
+        Quantité minimale de commande par défaut :
+        importateur 50, grossiste 5, détaillant/garage 1.
+        Produit actif mais non public (publicListing = false).
+      end note
+      SY --> V : Afficher le message de succès
+
+      opt ajouter une variante (obligatoire pour rendre le produit commandable)
+        V -> SY : Saisir la variante (SKU variante, prix de revient)
+        SY -> DB : Enregistrer la variante
+
+        alt SKU de variante disponible
+          DB --> SY : Variante créée
+          SY --> V : Confirmer la création de la variante
+        else SKU de variante déjà utilisé
+          SY --> V : Erreur 409 « SKU variante déjà utilisé »
+        end
+      end
+
+      opt définir le stock initial (réservé org_admin / logistique)
+        V -> SY : Saisir le stock initial et l'entrepôt
+        SY -> DB : Enregistrer le niveau de stock (upsert)
+
+        alt entrepôt et variante trouvés
+          DB --> SY : Stock mis à jour
+          SY -> SY : Comparer le stock au seuil de réapprovisionnement
+
+          opt stock inférieur ou égal au seuil
+            SY -> SY : Déclencher l'alerte de stock bas
+          end
+          SY --> V : Confirmer la mise à jour du stock
+        else entrepôt ou variante introuvable
+          SY --> V : Erreur 404
+        end
+      end
+
+      V -> SY : Cliquer sur « Ajouter image »
+      SY --> V : Afficher le formulaire image
+      V -> SY : Remplir et soumettre l'image
+      SY -> SY : Contrôler le fichier (JPEG/PNG/WebP, 5 Mo max)
+
+      alt fichier valide
+        SY -> SY : Générer 3 tailles WebP (vignette, moyenne, grande)
+        SY -> CD : Envoyer la requête de traitement de l'image
+
+        alt Cloudinary disponible
+          CD --> SY : Retourner l'URL de l'image
+        else Cloudinary indisponible
+          SY -> SY : Stockage local de secours (fallback)
+        end
+
+        SY -> DB : Enregistrer l'URL de l'image sur le produit
+        DB --> SY : Image enregistrée (201)
+        SY --> V : Afficher les informations du produit avec l'image
+      else fichier invalide (format, taille ou fichier manquant)
+        SY --> V : Afficher le message d'erreur d'upload
+      end
+
+    else type d'organisation non autorisé
+      SY --> V : Erreur 403 « Votre type d'organisation ne permet pas de vendre »
+    end
+
+  else informations invalides
+    SY --> V : Erreur 422 « Données invalides » avec le détail par champ
+  end
+
+  opt rendre le produit public (optionnel)
+    V -> SY : Activer la mise en avant publique
+    SY -> DB : Mettre à jour publicListing
+    DB --> SY : Produit visible dans le catalogue public
+    SY --> V : Confirmer la publication
+  end
+
+else organisation non autorisée (canSell = false)
+  SY --> V : Accès refusé à la gestion des produits
+end
+
+@enduml

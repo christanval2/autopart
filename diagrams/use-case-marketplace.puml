@@ -1,0 +1,258 @@
+@startuml use-case-marketplace
+left to right direction
+skinparam shadowing false
+skinparam usecaseFontSize 15
+skinparam actorFontSize 16
+skinparam stereotypeFontSize 13
+skinparam ArrowThickness 1.5
+
+' ===== Acteurs principaux =====
+actor "Visiteur" as V
+actor "Utilisateur" as U <<abstrait>>
+actor "Client" as C
+actor "Responsable\nachat (B2B)" as RA
+actor "Vendeur" as VE
+actor "Responsable\nboutique" as RB
+actor "Agent\nlogistique" as LI
+actor "Comptable" as CO
+actor "Administrateur" as AD
+
+' ===== Acteurs secondaires (systèmes externes réels) =====
+actor "API Paiement\n(MTN MoMo / Orange)" as PAY
+actor "API Groq (IA)" as IA
+actor "Service Push\nExpo / Socket.io" as PUSH
+
+rectangle "Marketplace pièces auto" {
+
+  ' --- Visiteur ---
+  usecase "Parcourir le catalogue" as u1
+  usecase "Rechercher des produits" as u2
+  usecase "Rechercher par VIN" as u3
+  usecase "Rechercher par photo (OCR)" as u4
+  usecase "Consulter un produit" as u5
+  usecase "Consulter les vendeurs à proximité" as u6
+  usecase "Suivre un colis" as u7
+  usecase "S'inscrire" as u8
+  usecase "Consulter le contenu légal" as u9
+  usecase "Utiliser le chatbot IA" as u10
+
+  ' --- Utilisateur (hérité par tous) ---
+  usecase "S'authentifier (2FA)" as u11
+  usecase "Gérer son profil" as u12
+  usecase "Utiliser la messagerie" as u13
+  usecase "Recevoir des notifications" as u14
+  usecase "Gérer ses données (RGPD)" as u15
+
+  ' --- Client ---
+  usecase "Gérer son panier" as u16
+  usecase "Gérer ses adresses" as u17
+  usecase "Passer commande" as u18
+  usecase "Effectuer le paiement" as u19
+  usecase "Payer via MTN MoMo" as u19a
+  usecase "Payer via Orange Money" as u19b
+  usecase "Payer par virement" as u19c
+  usecase "Gérer ses commandes" as u20
+  usecase "Suivre sa livraison" as u21
+  usecase "Récupérer en Click & Collect" as u22
+  usecase "Scanner un code-barres" as u23
+  usecase "Déposer un avis" as u24
+  usecase "Poser une question (Q&R)" as u25
+  usecase "Gérer ses retours" as u26
+  usecase "Ouvrir un litige" as u27
+  usecase "Gérer ses favoris" as u28
+  usecase "Consulter ses points fidélité" as u29
+  usecase "Gérer son portefeuille" as u30
+  usecase "Télécharger ses factures" as u31
+  usecase "Commander par la voix" as u32
+  usecase "Appliquer un code promo" as u33
+
+  ' --- Responsable achat (B2B) ---
+  usecase "Gérer sa fiche organisation (KYB)" as u34
+  usecase "Inviter des membres" as u35
+  usecase "Solliciter un devis" as u36
+  usecase "Accepter / refuser un devis" as u37
+  usecase "Acheter à crédit B2B" as u38
+  usecase "Approuver les commandes (seuil)" as u39
+  usecase "Gérer les commandes récurrentes" as u40
+  usecase "Consulter son catalogue B2B" as u41
+
+  ' --- Vendeur ---
+  usecase "Gérer ses produits" as u42
+  usecase "Importer des produits (CSV)" as u43
+  usecase "Gérer les commandes entrantes" as u44
+  usecase "Préparer les commandes (picking)" as u45
+  usecase "Gérer les expéditions" as u46
+  usecase "Valider un retrait Click & Collect" as u47
+  usecase "Créer et envoyer un devis" as u48
+  usecase "Répondre aux questions" as u49
+  usecase "Répondre aux avis" as u50
+  usecase "Créer des lots (bundles)" as u51
+  usecase "Consulter ses statistiques" as u52
+  usecase "Paramétrer zones et frais de livraison" as u53
+
+  ' --- Responsable boutique (org_admin) ---
+  usecase "Gérer le stock" as u54
+  usecase "Gérer les bons de commande fournisseurs" as u55
+  usecase "Négocier les contrats de prix" as u56
+  usecase "Gérer les catalogues et gammes" as u57
+  usecase "Gérer les promotions" as u58
+
+  ' --- Agent logistique ---
+  usecase "Gérer les transferts de stock" as u59
+  usecase "Lancer les inventaires" as u60
+  usecase "Suivre les livraisons (carte)" as u61
+  usecase "Gérer les zones de livraison" as u62
+  usecase "Mettre à jour les retours" as u63
+  usecase "Réceptionner les approvisionnements" as u64
+
+  ' --- Comptable ---
+  usecase "Confirmer les paiements" as u65
+  usecase "Traiter les remboursements" as u66
+  usecase "Réconcilier Mobile Money" as u67
+  usecase "Valider et payer les commissions" as u68
+  usecase "Gérer la fiscalité (TVA)" as u69
+  usecase "Exporter les rapports" as u70
+
+  ' --- Administrateur ---
+  usecase "Gérer les utilisateurs" as u71
+  usecase "Valider les organisations (KYB)" as u72
+  usecase "Gérer catégories et marques" as u73
+  usecase "Modérer les produits" as u74
+  usecase "Modérer avis et Q&R" as u75
+  usecase "Arbitrer les litiges" as u76
+  usecase "Gérer les codes promo" as u77
+  usecase "Consulter le journal d'audit" as u78
+  usecase "Gérer la newsletter" as u79
+  usecase "Consulter les analytics globaux" as u80
+  usecase "Impersoner un utilisateur" as u81
+}
+
+' ===== Généralisations d'acteurs =====
+C --|> U
+RA --|> C
+VE --|> U
+RB --|> VE
+LI --|> U
+CO --|> U
+AD --|> U
+
+' ===== Associations Visiteur =====
+V -- u1
+V -- u2
+V -- u3
+V -- u4
+V -- u5
+V -- u6
+V -- u7
+V -- u8
+V -- u9
+V -- u10
+
+' ===== Associations Utilisateur (cas communs) =====
+U -- u11
+U -- u12
+U -- u13
+U -- u14
+U -- u15
+
+' ===== Associations Client =====
+C -- u16
+C -- u17
+C -- u18
+C -- u19
+C -- u20
+C -- u21
+C -- u22
+C -- u23
+C -- u24
+C -- u25
+C -- u26
+C -- u27
+C -- u28
+C -- u29
+C -- u30
+C -- u31
+C -- u32
+C -- u33
+
+' ===== Associations Responsable achat =====
+RA -- u34
+RA -- u35
+RA -- u36
+RA -- u37
+RA -- u38
+RA -- u39
+RA -- u40
+RA -- u41
+RA -- u56
+
+' ===== Associations Vendeur =====
+VE -- u42
+VE -- u43
+VE -- u44
+VE -- u45
+VE -- u46
+VE -- u47
+VE -- u48
+VE -- u49
+VE -- u50
+VE -- u51
+VE -- u52
+VE -- u53
+
+' ===== Associations Responsable boutique =====
+RB -- u54
+RB -- u55
+RB -- u56
+RB -- u57
+RB -- u58
+
+' ===== Associations Agent logistique =====
+LI -- u45
+LI -- u46
+LI -- u47
+LI -- u59
+LI -- u60
+LI -- u61
+LI -- u62
+LI -- u63
+LI -- u64
+
+' ===== Associations Comptable =====
+CO -- u65
+CO -- u66
+CO -- u67
+CO -- u68
+CO -- u69
+CO -- u70
+
+' ===== Associations Administrateur =====
+AD -- u69
+AD -- u70
+AD -- u71
+AD -- u72
+AD -- u73
+AD -- u74
+AD -- u75
+AD -- u76
+AD -- u77
+AD -- u78
+AD -- u79
+AD -- u80
+AD -- u81
+
+' ===== include / extend =====
+u18 ..> u19 : <<include>>
+u19a ..> u19 : <<extend>>
+u19b ..> u19 : <<extend>>
+u19c ..> u19 : <<extend>>
+u36 ..> u11 : <<include>>
+u37 ..> u18 : <<include>>
+
+' ===== Acteurs secondaires =====
+PAY -- u19
+IA -- u10
+IA -- u32
+PUSH -- u14
+
+@enduml

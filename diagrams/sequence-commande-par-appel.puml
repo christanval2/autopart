@@ -1,0 +1,64 @@
+@startuml sequence-commande-par-appel
+skinparam shadowing false
+skinparam actorFontSize 15
+skinparam participantFontSize 15
+skinparam messageFontSize 14
+skinparam ArrowThickness 1.5
+autoactivate on
+autonumber
+
+title Passer commande par appel
+
+actor "Client" as CL
+participant "Système" as SY
+participant "Agent vocal IA" as IA
+database "SGBD" as DB
+
+ref over CL, SY, IA, DB : s'authentifier()
+
+CL -> SY : Choisir « Commander par appel »
+SY -> IA : Démarrer l'appel vocal
+IA --> CL : Accueil vocal
+
+loop tant que le client ajoute des produits
+  CL -> IA : Exprimer son besoin
+  IA -> IA : Analyser la demande (NLU)
+  IA -> SY : Rechercher le produit
+  SY -> DB : Interroger le catalogue
+  DB --> SY : Produits disponibles
+  SY --> IA : Résultats de la recherche
+  IA -> CL : Présenter les produits
+  CL -> IA : Choisir le produit
+  IA -> SY : Ajouter le produit au panier
+  SY -> DB : Enregistrer le panier
+  DB --> SY : Panier mis à jour
+  SY --> IA : Produit ajouté au panier
+  IA -> CL : Proposer d'ajouter autre chose
+end
+
+CL -> IA : Confirmer la commande
+IA -> SY : Créer la commande
+SY -> DB : Enregistrer la commande
+DB --> SY : Commande créée
+SY --> IA : Demander le paiement
+CL -> SY : Confirmer le paiement (Mobile Money)
+SY -> SY : Traiter le paiement
+
+alt paiement confirmé
+  SY -> DB : Mettre à jour la commande (payée)
+  DB --> SY : Confirmation
+  SY -> CL : Confirmer la commande
+else paiement échoué
+  SY --> CL : Informer de l'échec du paiement
+end
+
+alt commande aboutie : l'IA clôture l'appel
+  IA -> CL : Remercier et résumer la commande
+  IA -> SY : Terminer la session vocale
+else le client abandonne
+  SY -> IA : Détecter la fin de l'appel
+end
+
+SY -> DB : Journaliser la session d'appel
+
+@enduml

@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "AutoParts Cameroun",
+    "slug": "autoparts-cm",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "autoparts",
+    "userInterfaceStyle": "automatic",
+    "extra": {
+      "eas": {
+        "projectId": "REMPLACER-PAR-LE-PROJECT-ID-EAS"
+      },
+      "googleClientIdAndroid": null,
+      "googleClientIdIOS": null
+    },
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1A4D8F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "cm.autoparts.app"
+    },
+    "android": {
+      "package": "cm.autoparts.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1A4D8F"
+      },
+      "permissions": [
+        "CAMERA",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-notifications",
+      "expo-web-browser",
+      "expo-secure-store",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+logs/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# Uploads locaux (stockage de repli) — sauf visuels de démo référencés
+# par le seed (/uploads/products/*.svg servis par l'API)
+uploads/*
+!uploads/products/
+uploads/products/*
+!uploads/products/*.svg
+
+# Documents KYB privés (jamais servis statiquement)
+private_uploads/
+
+# Archives légales
+archives/

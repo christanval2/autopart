@@ -1,0 +1,12 @@
+# LiveKit Agents SDK avec plugins Groq et Silero VAD
+livekit-agents[groq,silero]~=1.0
+livekit-plugins-groq>=0.3.0
+livekit-plugins-silero>=0.7.0
+
+# HTTP + utilitaires
+requests>=2.32.0
+python-dotenv>=1.0.0
+
+# Optionnel : TTS alternative si PlayAI non disponible
+# livekit-plugins-elevenlabs>=0.3.0
+# livekit-plugins-cartesia>=0.3.0

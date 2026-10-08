@@ -1,0 +1,36 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+
+@import "nativewind/theme";
+
+/* Dark mode piloté par une classe (.dark sur <html> côté web) au lieu de la
+   media query système — permet la bascule clair/sombre à l'exécution. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Classes utilisées depuis le package UI partagé du monorepo */
+@source "../../packages/ui/src";
+
+@theme {
+  /* Palette fournie : le rouge est LA couleur d'action, le cobalt reste
+     l'accent non-primaire (panier, badges), le vert porte le positif. */
+  --color-primary: #C92F3E;
+  --color-accent: #3874FF;
+  --color-success: #22C55E;
+  --color-danger: #C92F3E;
+
+  /* Neutres de la palette fournie — remappent l'échelle slate :
+     page grisée (50) < tuiles (100) < bordures (200) < cartes sombres
+     (700-800) < fond sombre (900-950). Le blanc reste réservé aux cartes. */
+  --color-slate-50: #ECEEF2;
+  --color-slate-100: #E4E7EC;
+  --color-slate-200: #D5DAE1;
+  --color-slate-300: #CBD2D9;
+  --color-slate-400: #97A0AC;
+  --color-slate-500: #5B616E;
+  --color-slate-600: #4A515C;
+  --color-slate-700: #333B43;
+  --color-slate-800: #1C2126;
+  --color-slate-900: #101419;
+  --color-slate-950: #0A0B0D;
+}

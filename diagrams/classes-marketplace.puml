@@ -1,0 +1,324 @@
+@startuml classes-marketplace
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam classFontSize 14
+skinparam classAttributeFontSize 12
+skinparam associationFontSize 12
+skinparam nodesep 45
+skinparam ranksep 60
+
+title Diagramme de classes — Marketplace pièces auto (tables principales)
+
+class user {
+  + id : String
+  + email : String
+  + phoneEnc : String
+  + passwordHash : String
+  + firstName : String
+  + lastName : String
+  + accountType : String (individual | pro | admin)
+  + roles : String[] (super_admin | org_admin | seller | buyer | logistics | accountant)
+  + isVerified : boolean
+  + isActive : boolean
+  + lastLoginAt : Date
+  __
+  + sAuthentifier()
+  + changerMotDePasse()
+  + gererProfil()
+}
+
+class organization {
+  + id : String
+  + name : String
+  + orgType : String (importer | wholesaler | retailer | garage)
+  + canSell : boolean
+  + taxId : String
+  + countryCode : String
+  + isVerified : boolean
+  + creditLimit : float
+  + approvalThreshold : float
+  + performanceScore : float
+  __
+  + peutVendre()
+  + verifierKYB()
+  + controlerLimiteCredit()
+}
+
+class address {
+  + id : String
+  + label : String
+  + street : String
+  + city : String
+  + postalCode : String
+  + countryCode : String
+  + isDefault : boolean
+  __
+  + definirParDefaut()
+}
+
+class category {
+  + id : String
+  + name : String
+  + slug : String
+  + parentId : String
+  + depth : int
+  + isActive : boolean
+}
+
+class brand {
+  + id : String
+  + name : String
+  + countryOfOrigin : String
+  + isOem : boolean
+  + isActive : boolean
+}
+
+class product {
+  + id : String
+  + sku : String (unique)
+  + oemReference : String
+  + name : String
+  + description : String
+  + basePrice : float
+  + currency : String
+  + condition : String (new | genuine_used | reconditioned)
+  + minOrderQty : int
+  + isActive : boolean
+  + publicListing : boolean
+  __
+  + calculerPrixParTier(tier)
+  + estCommandable()
+}
+
+class productVariant {
+  + id : String
+  + variantSku : String (unique)
+  + attributes : json
+  + costPrice : float
+  + priceOverride : float
+  + reorderPoint : int
+  + isActive : boolean
+}
+
+class productImage {
+  + id : String
+  + url : String
+  + sizes : json
+  + altText : String
+  + isPrimary : boolean
+  + sortOrder : int
+}
+
+class stockLevel {
+  + id : String
+  + qtyOnHand : int
+  + qtyReserved : int
+  + qtyAvailable : int
+  __
+  + reserver(qte)
+  + liberer(qte)
+  + ajuster(qte)
+  + alerterStockBas()
+}
+
+class cart {
+  + id : String
+  __
+  + ajouterArticle()
+  + fusionnerPanierInvite()
+  + calculerSousTotal()
+}
+
+class cartItem {
+  + id : String
+  + quantity : int
+  + priceAtAdd : float
+}
+
+class order {
+  + id : String
+  + orderNumber : String (unique)
+  + channel : String (b2b | b2c | marketplace)
+  + status : String (draft | confirmed | processing | shipped | delivered | cancelled | refunded)
+  + subtotal : float
+  + taxAmount : float
+  + shippingCost : float
+  + discountAmount : float
+  + totalAmount : float
+  + currency : String
+  + notes : String
+  __
+  + calculerTotal()
+  + changerStatut()
+  + annuler()
+}
+
+class orderLine {
+  + id : String
+  + productSnapshot : json
+  + quantity : int
+  + unitPrice : float
+  + lineTotal : float
+  + taxRate : float
+}
+
+class quote {
+  + id : String
+  + quoteNumber : String (unique)
+  + status : String (draft | sent | accepted | rejected | expired | converted)
+  + validUntil : Date
+  + subtotal : float
+  + discountPct : float
+  + totalAmount : float
+  + lines : json
+  __
+  + envoyer()
+  + accepter()
+  + refuser()
+  + convertirEnCommande()
+}
+
+class promotion {
+  + id : String
+  + code : String (unique)
+  + name : String
+  + type : String (percentage | fixed | free_shipping | bogo)
+  + scope : String (all | category | product | org)
+  + discountValue : float
+  + minOrderAmount : float
+  + maxUses : int
+  + usesCount : int
+  + validFrom : Date
+  + validUntil : Date
+  + isActive : boolean
+  __
+  + valider(code)
+  + appliquer()
+}
+
+class review {
+  + id : String
+  + rating : int
+  + comment : String
+  + isVerifiedPurchase : boolean
+  + status : String (approved | pending | rejected)
+  + sellerReply : String
+  __
+  + repondre()
+  + moderer()
+}
+
+class dispute {
+  + id : String
+  + type : String (not_received | wrong_item | quality | payment | other)
+  + status : String (open | under_review | resolved_buyer | resolved_seller | closed)
+  + description : String
+  + resolutionNotes : String
+  + evidenceUrls : String[]
+  __
+  + assigner()
+  + resoudre()
+}
+
+class returnRequest {
+  + id : String
+  + status : String (requested | approved | rejected | shipped_back | received | refunded)
+  + reason : String (defective | wrong_item | not_as_described | changed_mind | damaged_shipping | other)
+  + description : String
+  + returnTracking : String
+  + refundAmount : float
+  __
+  + approuver()
+  + rembourser()
+}
+
+class payment {
+  + id : String
+  + method : String (mobile_money | bank_transfer | cash | credit | card)
+  + status : String (pending | processing | completed | failed | refunded)
+  + amount : float
+  + currency : String
+  + gatewayRef : String
+  + paidAt : Date
+  __
+  + initier()
+  + confirmer()
+  + rembourser()
+}
+
+class shipment {
+  + id : String
+  + trackingNumber : String
+  + carrier : String
+  + status : String (preparing | in_transit | out_for_delivery | delivered | returned)
+  + shippedAt : Date
+  + deliveredAt : Date
+  + pickupCode : String
+  __
+  + expedier()
+  + confirmerLivraison()
+}
+
+class commission {
+  + id : String
+  + ratePct : float
+  + baseAmount : float
+  + commissionAmount : float
+  + status : String (pending | validated | paid | cancelled)
+  + paidAt : Date
+  __
+  + valider()
+  + payer()
+}
+
+class notification {
+  + id : String
+  + type : String (order_update | stock_alert | payment | promo | system)
+  + title : String
+  + body : String
+  + payload : json
+  + isRead : boolean
+  __
+  + marquerLue()
+}
+
+' ===== Associations et cardinalités =====
+user "1" -- "0..1" organization : appartient à
+organization "0..1" -- "0..*" organization : parent / filiale
+user "1" *-- "0..1" cart : possède
+user "1" -- "0..*" address : possède
+user "1" -- "0..*" order : passe
+organization "1" -- "0..*" order : vend
+user "1" -- "0..*" quote : demande
+organization "1" -- "0..*" quote : émet
+category "0..1" -- "0..*" category : parent de
+category "1" -- "0..*" product : classe
+brand "1" -- "0..*" product : marque
+organization "0..1" -- "0..*" product : propose
+product "1" *-- "0..*" productVariant : déclinée en
+product "1" *-- "0..*" productImage : illustré par
+productVariant "1" -- "0..*" stockLevel : stockée en
+cart "1" *-- "0..*" cartItem : contient
+productVariant "1" -- "0..*" cartItem : référencée dans
+order "1" *-- "0..*" orderLine : composée de
+productVariant "1" -- "0..*" orderLine : vendue via
+order "0..1" -- "0..1" payment : réglée par
+order "1" -- "0..*" shipment : expédiée par
+order "1" -- "0..*" commission : génère
+organization "1" -- "0..*" commission : perçue par
+user "1" -- "0..*" review : rédige
+product "1" -- "0..*" review : évalué par
+order "0..1" -- "0..*" review : validée par
+order "1" -- "0..*" dispute : contestée par
+user "1" -- "0..*" dispute : déposée par
+order "1" -- "0..*" returnRequest : objet d'un
+user "1" -- "0..*" returnRequest : demandé par
+user "1" -- "0..*" notification : reçoit
+
+note bottom of stockLevel
+  Retraits demandés : purchaseOrder, wallet,
+  warehouse, bundle. stockLevel est donc
+  relié uniquement à productVariant.
+end note
+
+@enduml
