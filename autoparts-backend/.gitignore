@@ -15,6 +15,8 @@ uploads/*
 !uploads/products/
 uploads/products/*
 !uploads/products/*.svg
+!uploads/products/*.jpeg
+!uploads/products/*.png
 
 # Documents KYB privés (jamais servis statiquement)
 private_uploads/

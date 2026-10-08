@@ -28,7 +28,8 @@
     "docker:reset": "docker-compose down -v && docker-compose up -d",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":50,\"functions\":60,\"lines\":60}}'",
-    "seed:demo": "ts-node --transpile-only -r tsconfig-paths/register scripts/seed-demo.ts"
+    "seed:demo": "ts-node --transpile-only -r tsconfig-paths/register scripts/seed-demo.ts",
+    "seed:produits": "ts-node --transpile-only -r tsconfig-paths/register scripts/seed-assetproduits.ts"
   },
   "dependencies": {
     "@livekit/agents": "^1.5.5",

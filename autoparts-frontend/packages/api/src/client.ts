@@ -49,6 +49,7 @@ export interface AuthTokens {
 // ── Pont avec le store d'authentification (apps/web & mobile) ──
 let currentTokens: AuthTokens | null = null;
 const logoutListeners = new Set<() => void>();
+const tokensChangedListeners = new Set<(tokens: AuthTokens | null) => void>();
 
 export const authBridge = {
   getTokens(): AuthTokens | null {
@@ -57,12 +58,21 @@ export const authBridge = {
   setTokens(tokens: AuthTokens | null): void {
     currentTokens = tokens;
   },
+  /** Abonnement aux changements de tokens — les apps y persistent la session
+   *  (le refresh rotatif émet de nouveaux tokens via ce canal). */
+  onTokensChanged(cb: (tokens: AuthTokens | null) => void): () => void {
+    tokensChangedListeners.add(cb);
+    return () => tokensChangedListeners.delete(cb);
+  },
   onLogout(cb: () => void): () => void {
     logoutListeners.add(cb);
     return () => logoutListeners.delete(cb);
   },
   emitLogout(): void {
     logoutListeners.forEach((cb) => cb());
+  },
+  emitTokensChanged(tokens: AuthTokens | null): void {
+    tokensChangedListeners.forEach((cb) => cb(tokens));
   },
 };
 
@@ -109,6 +119,8 @@ async function refreshAccessToken(): Promise<string> {
   );
   const next = data.data;
   authBridge.setTokens(next);
+  // Notifie les apps (persistance de la rotation du refresh token).
+  authBridge.emitTokensChanged(next);
   return next.accessToken;
 }
 

@@ -6,6 +6,7 @@ import { Bot, Camera, Mic } from 'lucide-react-native';
 import { productsApi, catalogApi } from '@autoparts/api';
 import { formatPrice } from '@autoparts/utils';
 import type { Product } from '@autoparts/types';
+import { ProductImage } from '../../src/components/ProductImage';
 
 export default function HomeScreen() {
   const [q, setQ] = useState('');
@@ -23,13 +24,11 @@ export default function HomeScreen() {
   const renderProduct = ({ item }: { item: Product }) => (
     <Link href={`/produits/${item.id}`} asChild>
       <Pressable className="m-1.5 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-        <View className="h-24 items-center justify-center bg-slate-100 dark:bg-slate-700">
-          {item.images?.[0] ? (
-            <Text>🖼</Text>
-          ) : (
-            <Text className="text-3xl">🔧</Text>
-          )}
-        </View>
+        <ProductImage
+          url={item.images?.[0]?.url}
+          alt={item.name}
+          containerClassName="h-24 w-full"
+        />
         <View className="gap-1 p-2.5">
           <Text className="text-xs font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
             {item.name}

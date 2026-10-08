@@ -8,6 +8,7 @@ import { formatDate, formatPrice } from '@autoparts/utils';
 import { toast } from 'sonner-native';
 import { useCartStore } from '../../src/store/cart.store';
 import { useAuthStore } from '../../src/store/auth.store';
+import { ProductImage } from '../../src/components/ProductImage';
 
 const CONDITION_LABELS: Record<string, string> = {
   new: 'Neuf', genuine_used: 'Occasion certifiée', reconditioned: 'Reconditionné',
@@ -105,9 +106,11 @@ export default function ProduitScreen() {
 
   return (
     <ScrollView className="flex-1 bg-slate-50 dark:bg-slate-900" contentContainerClassName="p-4 gap-4">
-      <View className="h-44 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700">
-        <Text className="text-5xl">🔧</Text>
-      </View>
+      <ProductImage
+        url={product.images?.[0]?.url}
+        alt={product.name}
+        containerClassName="h-44 w-full rounded-[20px]"
+      />
 
       <View className="gap-2">
         <View className="flex-row gap-2">

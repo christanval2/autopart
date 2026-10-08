@@ -8,6 +8,7 @@ import {
   Heart,
   HelpCircle,
   LogOut,
+  MapPin,
   Mic,
   MessageCircle,
   MonitorSmartphone,
@@ -153,6 +154,12 @@ export default function CompteScreen() {
         <SectionLabel>Services & préférences</SectionLabel>
         <View className="overflow-hidden rounded-[20px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
           <OptionRow icon={Heart} label="Mes favoris" onPress={() => router.push('/favoris')} />
+          <OptionRow
+            icon={MapPin}
+            label="Mes adresses de livraison"
+            subtitle="Ajouter, modifier, définir par défaut"
+            onPress={() => router.push('/adresses')}
+          />
           <OptionRow icon={MessageCircle} label="Messages" onPress={() => router.push('/messages')} />
           <OptionRow icon={Tag} label="Promotions & codes promo" onPress={() => router.push('/promotions')} />
           <OptionRow

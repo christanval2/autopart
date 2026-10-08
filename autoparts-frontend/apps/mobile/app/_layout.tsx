@@ -39,6 +39,8 @@ export default function RootLayout() {
           <Stack.Screen name="stats" options={{ title: 'Statistiques' }} />
           <Stack.Screen name="profil/modifier" options={{ title: 'Modifier le profil' }} />
           <Stack.Screen name="wallet" options={{ title: 'Mon wallet' }} />
+          <Stack.Screen name="adresses/index" options={{ title: 'Mes adresses' }} />
+          <Stack.Screen name="adresses/nouveau" options={{ title: 'Adresse de livraison' }} />
         </Stack>
       </QueryClientProvider>
     </AppThemeProvider>
