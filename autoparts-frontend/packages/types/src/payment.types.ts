@@ -12,7 +12,7 @@ export type PaymentMethodApi =
   | 'credit'
   | 'card';
 
-export type MomoProvider = 'mtn' | 'orange';
+export type MomoProvider = 'mtn' | 'orange' | 'cinetpay';
 
 export type PaymentStatus =
   | 'pending'
@@ -31,6 +31,8 @@ export interface Payment {
   currency: string;
   gatewayRef: string;
   gatewayResponse?: unknown;
+  /** CinetPay : URL de la page de paiement hébergée (redirection client). */
+  paymentUrl?: string | null;
   phone?: string | null;
   paidAt?: ISODate | null;
   createdAt?: ISODate;

@@ -14,7 +14,7 @@ import {
 import { shipmentsApi } from '@autoparts/api';
 import { formatDate } from '@autoparts/utils';
 import type { TrackedShipment } from '@autoparts/types';
-import { RouteMap, resolveRouteCoords } from '../../src/components/RouteMap';
+import { RouteMap } from '../../src/components/RouteMap';
 
 const STEPS = [
   { key: 'preparing', label: 'Préparation' },
@@ -37,9 +37,6 @@ export default function SuiviScreen() {
 
   const statusIndex = shipment ? STEPS.findIndex((s) => s.key === shipment.status) : -1;
   const progress = shipment?.progress ?? (statusIndex >= 0 ? statusIndex / (STEPS.length - 1) : 0);
-  const routeCoords = shipment
-    ? resolveRouteCoords(shipment.originCity, shipment.destinationCity)
-    : null;
 
   return (
     <ScrollView className="flex-1 bg-slate-50 dark:bg-slate-900" contentContainerClassName="gap-4 p-4 pb-24">
@@ -132,13 +129,13 @@ export default function SuiviScreen() {
             ) : null}
           </View>
 
-          {/* ── Carte du trajet (si les villes sont connues) ── */}
-          {routeCoords ? (
+          {/* ── Carte du trajet (géocodé + route réelle via backend) ── */}
+          {shipment.originCity || shipment.destinationCity ? (
             <RouteMap
               originName={shipment.originWarehouse ?? shipment.originCity ?? 'Origine'}
-              origin={routeCoords.origin}
               destinationName={shipment.destinationLabel ?? shipment.destinationCity ?? 'Destination'}
-              destination={routeCoords.destination}
+              originCity={shipment.originCity}
+              destinationCity={shipment.destinationCity}
               progress={progress}
             />
           ) : null}

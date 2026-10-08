@@ -1,55 +1,55 @@
-import { useMemo } from 'react';
-import { View } from 'react-native';
+import { createElement, useEffect, useMemo, useState } from 'react';
+import { Platform, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { geoApi, type GeocodeResult, type RouteResult } from '@autoparts/api';
 
-// ── Coordonnées des villes camerounaises desservies ────────────────
-const CITIES: Array<{ match: string[]; lat: number; lng: number }> = [
-  { match: ['douala'], lat: 4.0511, lng: 9.7679 },
-  { match: ['yaoundé', 'yaounde'], lat: 3.848, lng: 11.502 },
-  { match: ['bamenda'], lat: 5.9597, lng: 10.1459 },
-  { match: ['bafoussam'], lat: 5.4781, lng: 10.4179 },
-  { match: ['garoua'], lat: 9.3013, lng: 13.392 },
-  { match: ['maroua'], lat: 10.5957, lng: 14.3159 },
-  { match: ['ngaoundéré', 'ngaoundere'], lat: 7.3167, lng: 13.5833 },
-  { match: ['bertoua'], lat: 4.5771, lng: 13.6846 },
-  { match: ['ebolowa'], lat: 2.9, lng: 11.15 },
-  { match: ['kribi'], lat: 2.9386, lng: 9.9095 },
-  { match: ['limbe'], lat: 4.0229, lng: 9.1949 },
-  { match: ['kumba'], lat: 4.6361, lng: 9.4444 },
-  { match: ['buea'], lat: 4.1527, lng: 9.241 },
-];
-
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-export function cityCoords(name?: string | null): [number, number] | null {
-  if (!name) return null;
-  const n = norm(name);
-  const city = CITIES.find((c) => c.match.some((m) => n.includes(m)));
-  return city ? [city.lat, city.lng] : null;
-}
+type Coords = [number, number]; // [lat, lng]
 
 type Props = {
   originName: string;
-  origin: [number, number];
   destinationName: string;
-  destination: [number, number];
-  /** 0 → 1 : position estimée du colis sur le trajet. */
+  /** Ville d'origine — géocodée via Geoapify (backend /geo/geocode). */
+  originCity?: string | null;
+  /** Ville de destination — géocodée via Geoapify (backend /geo/geocode). */
+  destinationCity?: string | null;
+  /** 0 → 1 : position estimée du colis le long de la route réelle. */
   progress?: number;
   height?: number;
 };
 
+/** Interpole un point à la fraction `t` du polygone [lat,lng] (longueurs cumulées). */
+function pointAtFraction(coords: Coords[], t: number): Coords {
+  if (coords.length === 0) return [0, 0];
+  if (coords.length === 1) return coords[0];
+  const dist = (a: Coords, b: Coords) =>
+    Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const total = coords.slice(1).reduce((s, c, i) => s + dist(coords[i], c), 0);
+  const target = Math.min(1, Math.max(0, t)) * total;
+  let acc = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const d = dist(coords[i], coords[i + 1]);
+    if (acc + d >= target) {
+      const f = d === 0 ? 0 : (target - acc) / d;
+      return [
+        coords[i][0] + (coords[i + 1][0] - coords[i][0]) * f,
+        coords[i][1] + (coords[i + 1][1] - coords[i][1]) * f,
+      ];
+    }
+    acc += d;
+  }
+  return coords[coords.length - 1];
+}
+
 function buildHtml(
   originName: string,
-  origin: [number, number],
+  origin: Coords,
   destinationName: string,
-  destination: [number, number],
-  progress: number,
+  destination: Coords,
+  routeCoords: Coords[] | null,
+  truck: Coords,
 ): string {
-  const safe = (s: string) => s.replace(/</g, '&lt;');
+  // JSON.stringify échappe apostrophes, guillemets et chevrons — sûr dans un <script>.
+  const js = (s: string) => JSON.stringify(s);
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -64,60 +64,153 @@ function buildHtml(
 </style>
 </head><body>
 <div id="map"></div>
+<div id="err" style="color:#C92F3E;font:12px sans-serif;padding:8px"></div>
 <script>
+  window.onerror = function (msg) {
+    document.getElementById('err').textContent = 'ERR: ' + msg;
+  };
   const origin = ${JSON.stringify(origin)};
   const destination = ${JSON.stringify(destination)};
-  const map = L.map('map', { scrollWheelZoom: false, attributionControl: true });
+  const routeCoords = ${JSON.stringify(routeCoords)};
+  const map = L.map('map', { scrollWheelZoom: false });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
 
   L.marker(origin, { icon: L.divIcon({ className: '', html: '<div class="pin origin">🏭</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
-    .addTo(map).bindTooltip('${safe(originName)}');
+    .addTo(map).bindTooltip(${js(originName)});
   L.marker(destination, { icon: L.divIcon({ className: '', html: '<div class="pin">📍</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
-    .addTo(map).bindTooltip('${safe(destinationName)}');
+    .addTo(map).bindTooltip(${js(destinationName)});
 
-  L.polyline([origin, destination], { color: '#C92F3E', weight: 3, dashArray: '6 8', opacity: 0.8 }).addTo(map);
+  if (routeCoords && routeCoords.length > 1) {
+    L.polyline(routeCoords, { color: '#C92F3E', weight: 4, opacity: 0.85 }).addTo(map);
+  } else {
+    L.polyline([origin, destination], { color: '#C92F3E', weight: 3, dashArray: '6 8', opacity: 0.8 }).addTo(map);
+  }
 
-  // Position estimée du colis sur le trajet
-  const p = ${JSON.stringify(Math.min(1, Math.max(0, progress)))};
-  const truck = [origin[0] + (destination[0] - origin[0]) * p, origin[1] + (destination[1] - origin[1]) * p];
-  L.marker(truck, { icon: L.divIcon({ className: '', html: '<div class="pin" style="border-color:#3874FF">🚚</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
+  L.marker(${JSON.stringify(truck)}, { icon: L.divIcon({ className: '', html: '<div class="pin" style="border-color:#3874FF">🚚</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
     .addTo(map);
 
-  map.fitBounds(L.latLngBounds([origin, destination]).pad(0.25));
+  map.fitBounds(L.latLngBounds(routeCoords ?? [origin, destination]).pad(0.25));
+
+  // L'iframe peut ne pas être mis en page au moment de l'init — Leaflet garde
+  // alors une taille nulle et ne charge aucune tuile. On force le recalcul.
+  window.addEventListener('load', () => setTimeout(() => map.invalidateSize(), 120));
+  setTimeout(() => map.invalidateSize(), 400);
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => map.invalidateSize()).observe(document.body);
+  }
 </script>
 </body></html>`;
 }
 
-/** Carte d'itinéraire (Leaflet dans une WebView) — marche sur web et natif. */
+/**
+ * Carte d'itinéraire routier — Leaflet (WebView) + services geo du backend :
+ * géocodage Geoapify (GET /geo/geocode) puis route réelle OSRM (GET /geo/route)
+ * avec distance et durée. Le colis 🚚 est placé sur la route réelle.
+ */
 export function RouteMap({
   originName,
-  origin,
   destinationName,
-  destination,
+  originCity,
+  destinationCity,
   progress = 0,
-  height = 230,
+  height = 240,
 }: Props) {
-  const html = useMemo(
-    () => buildHtml(originName, origin, destinationName, destination, progress),
-    [originName, origin[0], origin[1], destinationName, destination[0], destination[1], progress],
+  const [origin, setOrigin] = useState<GeocodeResult | null>(null);
+  const [destination, setDestination] = useState<GeocodeResult | null>(null);
+  const [route, setRoute] = useState<RouteResult | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const originQuery = originCity?.trim() ?? '';
+  const destinationQuery = destinationCity?.trim() ?? '';
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    setRoute(null);
+    (async () => {
+      try {
+        if (originQuery.length < 2 || destinationQuery.length < 2) return;
+        const [o, d] = await Promise.all([
+          geoApi.geocode(`${originQuery}, Cameroun`),
+          geoApi.geocode(`${destinationQuery}, Cameroun`),
+        ]);
+        if (cancelled) return;
+        setOrigin(o);
+        setDestination(d);
+        try {
+          const r = await geoApi.route(
+            { lat: o.lat, lng: o.lng },
+            { lat: d.lat, lng: d.lng },
+          );
+          if (!cancelled) setRoute(r);
+        } catch {
+          // Route indisponible : la carte retombe sur la ligne droite.
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [originQuery, destinationQuery]);
+
+  const coords = useMemo<Coords[] | null>(() => route?.coordinates ?? null, [route]);
+  const truck = useMemo<Coords>(() => {
+    if (coords && coords.length > 1) return pointAtFraction(coords, progress);
+    if (origin && destination)
+      return [
+        origin.lat + (destination.lat - origin.lat) * progress,
+        origin.lng + (destination.lng - origin.lng) * progress,
+      ];
+    return [0, 0];
+  }, [coords, origin, destination, progress]);
+
+  if (failed || !origin || !destination) {
+    if (failed || (!originQuery && !destinationQuery)) return null;
+    return (
+      <View
+        className="items-center justify-center rounded-[14px] border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"
+        style={{ height: 120 }}
+      >
+        <Text className="text-xs text-slate-400">
+          {failed ? 'Carte indisponible pour ce trajet' : 'Chargement de la carte…'}
+        </Text>
+      </View>
+    );
+  }
+
+  const html = buildHtml(
+    originName,
+    [origin.lat, origin.lng],
+    destinationName,
+    [destination.lat, destination.lng],
+    coords,
+    truck,
   );
 
   return (
     <View className="overflow-hidden rounded-[14px] border border-slate-200 dark:border-slate-700" style={{ height }}>
-      <WebView source={{ html }} style={{ backgroundColor: '#E4E7EC' }} scrollEnabled={false} />
+      {/* react-native-webview ne supporte pas la plateforme web — iframe directe. */}
+      {Platform.OS === 'web' ? (
+        createElement('iframe', {
+          srcDoc: html,
+          title: 'Carte du trajet',
+          loading: 'lazy',
+          style: { width: '100%', height: '100%', border: 'none', display: 'block' },
+        })
+      ) : (
+        <WebView source={{ html }} style={{ backgroundColor: '#E4E7EC' }} scrollEnabled={false} />
+      )}
+      {route ? (
+        <View className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-white/95 px-2.5 py-1 shadow dark:bg-slate-900/95">
+          <Text className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+            {route.distanceKm} km · ~{route.durationMin} min de route
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
-}
-
-/** Résout les coordonnées d'itinéraire depuis les villes du suivi (null si inconnues). */
-export function resolveRouteCoords(
-  originCity?: string | null,
-  destinationCity?: string | null,
-): { origin: [number, number]; destination: [number, number] } | null {
-  const origin = cityCoords(originCity);
-  const destination = cityCoords(destinationCity);
-  if (!origin || !destination) return null;
-  return { origin, destination };
 }

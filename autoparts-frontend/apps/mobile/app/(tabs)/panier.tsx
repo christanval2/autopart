@@ -91,7 +91,8 @@ export default function PanierScreen() {
         )}
       />
 
-      <View className="border-t border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      {/* La barre s'arrête au-dessus du dock flottant (~88px + marge). */}
+      <View className="border-t border-slate-200 bg-white px-4 pb-[104px] pt-3 dark:border-slate-700 dark:bg-slate-800">
         <View className="mb-2 flex-row justify-between">
           <Text>Sous-total ({count})</Text>
           <Text className="font-bold">{formatPrice(subtotal)}</Text>

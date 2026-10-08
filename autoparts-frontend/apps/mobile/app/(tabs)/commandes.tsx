@@ -71,7 +71,7 @@ export default function CommandesScreen() {
                 })
               }
             >
-              <TriangleAlert size={13} color="#DC2626" />
+              <TriangleAlert size={13} stroke="#DC2626" />
               <Text className="text-xs font-medium text-danger">Signaler un problème</Text>
             </Pressable>
           ) : null}

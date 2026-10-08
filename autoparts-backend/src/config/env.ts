@@ -76,6 +76,10 @@ const envSchema = z.object({
   GROQ_API_KEY:        z.string().optional(),
   GROQ_MODEL:          z.string().default('llama-3.3-70b-versatile'),
 
+  // CinetPay — agrégateur MoMo/Orange/carte (api-checkout.cinetpay.com)
+  CINETPAY_API_KEY:    z.string().optional(),
+  CINETPAY_SITE_ID:    z.string().optional(),
+
   // Services tiers (clés fournies — intégration à venir)
   GEOAPIFY_API_KEY:    z.string().optional(), // géocodage vendeurs + autocomplete
   OCR_API_KEY:         z.string().optional(), // lecture étiquettes/factures (V3)

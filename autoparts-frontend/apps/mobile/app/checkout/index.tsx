@@ -147,7 +147,7 @@ export default function CheckoutScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-slate-50 dark:bg-slate-900" contentContainerClassName="p-4 gap-4">
+    <ScrollView className="flex-1 bg-slate-50 dark:bg-slate-900" contentContainerClassName="p-4 pb-28 gap-4">
       <View className="gap-2">
         <Text className="text-sm font-semibold">1. Adresse de livraison</Text>
         {addresses.map((a) => (

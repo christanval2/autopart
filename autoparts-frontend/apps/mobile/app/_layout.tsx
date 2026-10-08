@@ -41,6 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="wallet" options={{ title: 'Mon wallet' }} />
           <Stack.Screen name="adresses/index" options={{ title: 'Mes adresses' }} />
           <Stack.Screen name="adresses/nouveau" options={{ title: 'Adresse de livraison' }} />
+          <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
         </Stack>
       </QueryClientProvider>
     </AppThemeProvider>

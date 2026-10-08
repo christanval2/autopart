@@ -122,14 +122,23 @@ export default function CheckoutPage() {
         return;
       }
 
+      const useCinetpay = method === 'mobile_money' && provider === 'cinetpay';
       const payment = await paymentsApi.create({
         orderId: created.id,
         method,
-        phone: method === 'mobile_money' ? phone : undefined,
+        phone: method === 'mobile_money' && !useCinetpay ? phone : undefined,
         provider: method === 'mobile_money' ? provider : undefined,
       });
       setPaymentId(payment.id);
       setStep('waiting');
+
+      // CinetPay : redirection vers la page de paiement hébergée
+      // (paymentUrl renvoyé par l'API, stocké dans gatewayResponse)
+      const redirectUrl = (payment.gatewayResponse as { paymentUrl?: string } | null)?.paymentUrl;
+      if (useCinetpay && redirectUrl) {
+        window.location.href = redirectUrl;
+        return;
+      }
 
       // Polling statut (webhook absent) — 30 min max côté backend, UI : 2 min
       pollRef.current = setInterval(async () => {
@@ -183,12 +192,16 @@ export default function CheckoutPage() {
       <div className="mx-auto max-w-xl px-4 py-16 text-center">
         <Loader2 strokeWidth={1.5} className="mx-auto h-14 w-14 animate-spin text-accent" />
         <h1 className="mt-4 text-xl font-bold">
-          {method === 'mobile_money'
+          {method === 'mobile_money' && provider === 'cinetpay'
+            ? 'Redirection vers la page de paiement sécurisée CinetPay…'
+            : method === 'mobile_money'
             ? `Confirmez sur votre téléphone ${provider === 'mtn' ? 'MTN' : 'Orange'}…`
             : 'Paiement en cours de vérification…'}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {method === 'mobile_money'
+          {method === 'mobile_money' && provider === 'cinetpay'
+            ? 'Vous allez choisir MTN MoMo ou Orange Money et valider sur votre téléphone.'
+            : method === 'mobile_money'
             ? `Une demande de paiement a été envoyée au ${phone}. Validez avec votre code secret.`
             : 'Nous vérifions votre paiement, ne fermez pas cette page.'}
         </p>
@@ -303,10 +316,10 @@ export default function CheckoutPage() {
                 ))}
               </div>
 
-              {method === 'mobile_money' && (
+              {method === 'mobile_money' && provider !== 'cinetpay' && (
                 <div className="space-y-3 rounded-input bg-muted/50 p-3">
                   <div className="flex gap-2">
-                    {(['mtn', 'orange'] as MomoProvider[]).map((p) => (
+                    {(['mtn', 'orange', 'cinetpay'] as MomoProvider[]).map((p) => (
                       <button
                         key={p}
                         onClick={() => setProvider(p)}
@@ -314,7 +327,7 @@ export default function CheckoutPage() {
                           provider === p ? 'border-primary bg-card' : 'border-border text-muted-foreground'
                         }`}
                       >
-                        {p === 'mtn' ? 'MTN MoMo' : 'Orange Money'}
+                        {p === 'mtn' ? 'MTN MoMo' : p === 'orange' ? 'Orange Money' : 'CinetPay (MoMo/Orange)'}
                       </button>
                     ))}
                   </div>

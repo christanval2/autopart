@@ -31,7 +31,7 @@ export const InitiatePaymentSchema = z.object({
   method:   z.enum(['mobile_money', 'bank_transfer', 'cash', 'credit', 'card']),
   // Mobile money spécifique
   phone:    z.string().regex(/^\+?[0-9]{8,15}$/).optional(),
-  provider: z.enum(['mtn', 'orange']).optional(),
+  provider: z.enum(['mtn', 'orange', 'cinetpay']).optional(),
 });
 
 export const WebhookMomoSchema = z.object({
@@ -216,6 +216,69 @@ function notifyOrderPaid(payment: Payment): void {
   }).catch(e => logger.warn('Email order-confirmed non envoyé:', e.message));
 }
 
+// ═══ CinetPay — agrégateur MoMo/Orange/carte par redirection ═══
+// Doc : api-checkout.cinetpay.com/v2/payment (+ /v2/payment/check).
+// Le client paie sur la page hébergée CinetPay ; la confirmation passe
+// par le webhook notify_url, TOUJOURS re-vérifiée via /check (jamais
+// confiance au webhook seul).
+const CINETPAY_BASE = 'https://api-checkout.cinetpay.com';
+
+const CinetPayAdapter = {
+  async initiate(
+    amount: number, currency: string, ref: string, description: string,
+  ): Promise<{ paymentResult: PaymentResult; paymentUrl: string }> {
+    if (!env.CINETPAY_API_KEY || !env.CINETPAY_SITE_ID) {
+      throw ApiError.badRequest('CinetPay non configuré (CINETPAY_API_KEY / CINETPAY_SITE_ID manquants)');
+    }
+    // CinetPay n'accepte que XOF/XAF en zone UEMOA/CEMAC — notre XAF est natif
+    const { data } = await axios.post(`${CINETPAY_BASE}/v2/payment`, {
+      apikey:         env.CINETPAY_API_KEY,
+      site_id:        env.CINETPAY_SITE_ID,
+      transaction_id: ref,
+      amount:         Math.round(Number(amount)),
+      currency,
+      description:    description.slice(0, 250),
+      channels:       'MOBILE_MONEY',
+      return_url:     `${env.APP_URL}/payments/callback/cinetpay`,
+      notify_url:     `${env.APP_URL}/api/v1/payments/webhook/cinetpay`,
+      lang:           'fr',
+    }, { timeout: 15_000 });
+
+    if (data?.code !== '201' || !data?.data?.payment_url) {
+      logger.error('CinetPay initiate error:', JSON.stringify(data).slice(0, 300));
+      throw ApiError.badRequest(data?.message ?? 'CinetPay : initiation impossible');
+    }
+    return {
+      paymentUrl:   data.data.payment_url as string,
+      paymentResult: { gatewayRef: ref, status: 'pending', rawResponse: data },
+    };
+  },
+
+  /** Vérification officielle du statut — source de vérité (webhook ou retour). */
+  async check(ref: string, expectedAmount: number): Promise<{ status: PaymentStatus; raw: unknown }> {
+    const { data } = await axios.post(`${CINETPAY_BASE}/v2/payment/check`, {
+      apikey:         env.CINETPAY_API_KEY,
+      site_id:        env.CINETPAY_SITE_ID,
+      transaction_id: ref,
+    }, { timeout: 15_000 });
+
+    const s = data?.data?.status;
+    let status: PaymentStatus = 'processing';
+    if (s === 'ACCEPTED') {
+      // Contrôle anti-fraude : le montant reçu doit correspondre à la commande
+      const received = Number(data?.data?.amount ?? 0);
+      status = received > 0 && Math.abs(received - expectedAmount) > 1
+        ? 'failed'
+        : 'completed';
+    } else if (s === 'REFUSED' || s === 'FAILED' || s === 'CANCELLED' || s === 'REJECTED') {
+      status = 'failed';
+    } else if (s === 'CREATED' || s === 'PENDING' || s === 'WAITING_CUSTOMER_PHONE_ON_USSD') {
+      status = 'pending';
+    }
+    return { status, raw: data };
+  },
+};
+
 export const PaymentsService = {
 
   async initiate(dto: InitiatePaymentDto): Promise<Payment> {
@@ -230,6 +293,21 @@ export const PaymentsService = {
     const ref = generateRef('PAY');
 
     let result: PaymentResult | null = null;
+    // URL de paiement CinetPay : le front redirige le client vers la page
+    // hébergée CinetPay (MoMo/Orange/carte) puis revient sur le callback.
+    let cinetpayRedirectUrl: string | null = null;
+
+    if (dto.method === 'mobile_money' && dto.provider === 'cinetpay') {
+      // Pas de numéro requis : le client saisit son numéro chez CinetPay
+      const r = await CinetPayAdapter.initiate(
+        order.totalAmount,
+        order.currency,
+        ref,
+        `Commande ${(order as any).orderNumber ?? order.id.slice(0, 8)}`,
+      );
+      result = r.paymentResult;
+      cinetpayRedirectUrl = r.paymentUrl;
+    } else
 
     if (dto.method === 'mobile_money') {
       if (!dto.phone) throw ApiError.badRequest('Numéro de téléphone requis pour Mobile Money');
@@ -259,7 +337,9 @@ export const PaymentsService = {
       amount:          order.totalAmount,
       currency:        order.currency,
       gatewayRef:      result.gatewayRef,
-      gatewayResponse: result.rawResponse,
+      gatewayResponse: cinetpayRedirectUrl
+        ? { ...((result.rawResponse as object) ?? {}), paymentUrl: cinetpayRedirectUrl, provider: 'cinetpay' }
+        : result.rawResponse,
     });
     const saved = await paymentRepo().save(payment);
     saved.order = order;
@@ -286,6 +366,35 @@ export const PaymentsService = {
     }
 
     return saved;
+  },
+
+  /**
+   * Webhook CinetPay (notify_url) et retour client (return_url) : même
+   * traitement — re-vérification systématique via /v2/payment/check,
+   * jamais confiance au payload reçu.
+   */
+  async handleCinetpayNotify(transactionId: string): Promise<Payment> {
+    const payment = await paymentRepo().findOne({
+      where: { gatewayRef: transactionId },
+      relations: ['order'],
+    });
+    if (!payment) throw ApiError.notFound('Paiement CinetPay inconnu');
+    if (payment.status === 'completed') return payment; // déjà traité (idempotent)
+
+    const { status, raw } = await CinetPayAdapter.check(
+      transactionId, Number(payment.amount),
+    );
+    payment.status = status;
+    payment.gatewayResponse = { ...((payment.gatewayResponse as object) ?? {}), check: raw };
+
+    if (status === 'completed') {
+      payment.paidAt = new Date();
+      await orderRepo().update(payment.order.id, { status: 'confirmed' });
+      notifyOrderPaid(payment);
+    }
+    await paymentRepo().save(payment);
+    logger.info(`CinetPay ${transactionId} → ${status}`);
+    return payment;
   },
 
   /**
@@ -373,7 +482,12 @@ export const PaymentsService = {
     if (payment.status === 'pending' || payment.status === 'processing') {
       let gatewayStatus: PaymentStatus = payment.status;
 
-      if (payment.method === 'mobile_money') {
+      const isCinetpay = (payment.gatewayResponse as any)?.provider === 'cinetpay';
+      if (payment.method === 'mobile_money' && isCinetpay) {
+        gatewayStatus = (await CinetPayAdapter.check(
+          payment.gatewayRef, Number(payment.amount),
+        )).status;
+      } else if (payment.method === 'mobile_money') {
         const check = await MtnMomoAdapter.checkStatus(payment.gatewayRef);
         gatewayStatus = check.status;
       }
@@ -658,6 +772,30 @@ export const paymentsRouter = Router();
 // Webhooks publics (pas d'auth — vérification signature dans le service)
 paymentsRouter.post('/webhook/mtn',    Ctrl.webhookMtn);
 paymentsRouter.post('/webhook/orange', Ctrl.webhookOrange);
+
+// CinetPay : notification serveur (notify_url) — re-vérifiée via /check.
+// GET : le client revient de la page CinetPay avec ?transaction_id= (return_url).
+paymentsRouter.post('/webhook/cinetpay', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tid = req.body?.transaction_id ?? req.body?.data?.transaction_id;
+    if (!tid) return res.status(200).json({ received: true }); // ack neutre
+    await PaymentsService.handleCinetpayNotify(String(tid));
+    res.status(200).json({ received: true });
+  } catch (e) {
+    // 200 quand même : CinetPay retry sinon inutilement (l'erreur est loggée)
+    logger.warn('CinetPay webhook error:', (e as Error).message);
+    res.status(200).json({ received: true });
+  }
+});
+paymentsRouter.get('/callback/cinetpay', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tid = String(req.query.transaction_id ?? '');
+    const payment = tid
+      ? await PaymentsService.handleCinetpayNotify(tid)
+      : null;
+    res.json(ApiResponse.success(payment ? { status: payment.status } : { status: 'unknown' }));
+  } catch (e) { next(e); }
+});
 
 // E6c — taux de change du jour (affichage indicatif, commandes en XAF)
 paymentsRouter.get('/rates', async (_req: Request, res: Response) => {

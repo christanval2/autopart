@@ -13,6 +13,7 @@ export * from './reviews.api';
 export * from './admin.api';
 export * from './analytics.api';
 export * from './messaging.api';
+export * from './notifications.api';
 export * from './chatbot.api';
 export * from './pricing.api';
 export * from './stock.api';
