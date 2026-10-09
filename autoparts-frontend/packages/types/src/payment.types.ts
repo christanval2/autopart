@@ -12,7 +12,7 @@ export type PaymentMethodApi =
   | 'credit'
   | 'card';
 
-export type MomoProvider = 'mtn' | 'orange' | 'cinetpay';
+export type MomoProvider = 'mtn' | 'orange' | 'cinetpay' | 'fapshi';
 
 export type PaymentStatus =
   | 'pending'

@@ -1,27 +1,27 @@
 {
-  "cli": { "version": ">= 13.0.0" },
+  "cli": { "version": ">= 13.0.0", "appVersionSource": "remote" },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "http://localhost:3000/api/v1",
-        "EXPO_PUBLIC_SOCKET_URL": "http://localhost:3000",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID": "",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS": ""
+        "EXPO_PUBLIC_SOCKET_URL": "http://localhost:3000"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID": "",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS": ""
+        "EXPO_PUBLIC_API_URL": "http://10.54.68.84:3000/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "http://10.54.68.84:3000",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB": "426947907190-tgi1he2leq9m68ebme1hg0ctqmo1ajls.apps.googleusercontent.com"
       }
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID": "",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS": ""
+        "EXPO_PUBLIC_API_URL": "http://10.54.68.84:3000/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "http://10.54.68.84:3000",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB": "426947907190-tgi1he2leq9m68ebme1hg0ctqmo1ajls.apps.googleusercontent.com"
       }
     }
   },

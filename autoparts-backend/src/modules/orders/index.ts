@@ -39,7 +39,9 @@ export const CreateOrderSchema = z.object({
   // mobile/vocal où l'acheteur ne connaît pas le vendeur)
   sellerOrgId:       z.string().uuid().optional(),
   channel:           z.enum(['b2b', 'b2c', 'marketplace']),
-  billingAddressId:  z.string().uuid(),
+  // Optionnel : par défaut = adresse de livraison (le checkout web n'a
+  // qu'une adresse ; le B2B peut renseigner une adresse de facturation distincte)
+  billingAddressId:  z.string().uuid().optional(),
   shippingAddressId: z.string().uuid(),
   lines:             z.array(LineSchema).min(1).max(200),
   notes:             z.string().max(1000).optional(),
@@ -117,7 +119,8 @@ export const OrdersService = {
           .createQueryBuilder('sl')
           .innerJoin('sl.warehouse', 'wh')
           .select('sl.variant_id', 'variantId')
-          .addSelect('MIN(wh.org_id)', 'orgId')
+          // MIN(uuid) n'existe pas en PostgreSQL : caster en text
+          .addSelect('MIN(wh.org_id::text)', 'orgId')
           .where('sl.variant_id IN (:...vids)', { vids: variantIds })
           .groupBy('sl.variant_id')
           .getRawMany<{ variantId: string; orgId: string }>();
@@ -173,7 +176,9 @@ export const OrdersService = {
         // (StockLevel n'a pas de propriété variantId : utiliser la colonne)
         const stockQb = stockRepo()
           .createQueryBuilder('sl')
-          .innerJoin('sl.warehouse', 'wh', 'wh.orgId = :orgId', { orgId: dto.sellerOrgId })
+          // NB : sellerOrgId la variable RÉSOLUE (dto.sellerOrgId est null
+          // quand le vendeur est déduit du stock — sinon dispo toujours 0)
+          .innerJoin('sl.warehouse', 'wh', 'wh.orgId = :orgId', { orgId: sellerOrgId })
           .where('sl.variant_id = :vid', { vid: item.variantId })
           .select('SUM(sl.qtyOnHand - sl.qtyReserved)', 'total');
         const total = await stockQb.getRawOne<{ total: string }>();
@@ -330,7 +335,7 @@ export const OrdersService = {
         discountAmount:   0,
         totalAmount,
         currency:         dto.currency,
-        billingAddress:   { id: dto.billingAddressId },
+        billingAddress:   { id: dto.billingAddressId ?? dto.shippingAddressId },
         shippingAddress:  { id: dto.shippingAddressId },
         notes:            dto.notes,
         lines:            lines as OrderLine[],

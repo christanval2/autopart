@@ -31,7 +31,7 @@ export const InitiatePaymentSchema = z.object({
   method:   z.enum(['mobile_money', 'bank_transfer', 'cash', 'credit', 'card']),
   // Mobile money spécifique
   phone:    z.string().regex(/^\+?[0-9]{8,15}$/).optional(),
-  provider: z.enum(['mtn', 'orange', 'cinetpay']).optional(),
+  provider: z.enum(['mtn', 'orange', 'cinetpay', 'fapshi']).optional(),
 });
 
 export const WebhookMomoSchema = z.object({
@@ -304,6 +304,75 @@ const CinetPayAdapter = {
   },
 };
 
+// ═══ Fapshi — agrégateur camerounais (direct-pay USSD) ════════
+// POST {base}/direct-pay   → push USSD sur le téléphone du client
+// GET  {base}/payment-status/{transId} → CRE|PENDING|SUCCESSFUL|FAILED|EXPIRED
+// Headers d'auth : apiuser + apikey. Webhook recommandé sur polling
+// (6 req/min max par transaction).
+const FapshiAdapter = {
+  cfg() {
+    const baseUrl = env.FAPSHI_BASE_URL_SANDBOX ?? 'https://sandbox.fapshi.com';
+    const apiUser = env.FAPSHI_API_USER_SANDBOX;
+    const apiKey  = env.FAPSHI_API_KEY_SANDBOX;
+    if (!apiUser || !apiKey) {
+      throw ApiError.badRequest('Fapshi non configuré (FAPSHI_API_USER_SANDBOX / FAPSHI_API_KEY_SANDBOX manquants)');
+    }
+    return { baseUrl, apiUser, apiKey };
+  },
+
+  headers(cfg: { apiUser: string; apiKey: string }) {
+    return { apiuser: cfg.apiUser, apikey: cfg.apiKey, 'Content-Type': 'application/json' };
+  },
+
+  /** Push USSD : le client valide sur son téléphone (MoMo/Orange auto-détectés). */
+  async initiate(
+    amount: number, phone: string, ref: string,
+    opts?: { name?: string; email?: string; message?: string },
+  ): Promise<PaymentResult> {
+    const cfg = this.cfg();
+    let data: any;
+    try {
+      const res = await axios.post(`${cfg.baseUrl}/direct-pay`, {
+        amount:     Math.round(Number(amount)),
+        phone:      phone.replace(/\D/g, '').replace(/^237/, ''),
+        externalId: ref,
+        userId:     ref.slice(-20).replace(/[^a-zA-Z0-9_-]/g, ''),
+        message:    (opts?.message ?? 'Paiement AutoParts').slice(0, 200),
+        ...(opts?.name  ? { name:  opts.name.slice(0, 100) } : {}),
+        ...(opts?.email ? { email: opts.email } : {}),
+      }, { headers: this.headers(cfg), timeout: 15_000 });
+      data = res.data;
+    } catch (err: any) {
+      // Propager le motif réel du 4xx Fapshi (montant, numéro, quota…)
+      const msg = err?.response?.data?.message ?? err.message;
+      logger.error('Fapshi initiate error:', JSON.stringify(err?.response?.data ?? msg).slice(0, 300));
+      throw ApiError.badRequest(`Fapshi : ${msg}`);
+    }
+
+    if (!data?.transId) {
+      logger.error('Fapshi initiate error:', JSON.stringify(data).slice(0, 300));
+      throw ApiError.badRequest(data?.message ?? 'Fapshi : initiation impossible');
+    }
+    // gatewayRef = transId Fapshi (c'est lui qu'on interroge ensuite)
+    return { gatewayRef: data.transId, status: 'pending', rawResponse: data };
+  },
+
+  /** Source de vérité (webhook OU polling). 6 req/min max par transId. */
+  async check(transId: string): Promise<{ status: PaymentStatus; raw: unknown }> {
+    const cfg = this.cfg();
+    const { data } = await axios.get(
+      `${cfg.baseUrl}/payment-status/${encodeURIComponent(transId)}`,
+      { headers: this.headers(cfg), timeout: 15_000 },
+    );
+    const s = String(data?.status ?? '').toUpperCase();
+    let status: PaymentStatus = 'processing';
+    if (s === 'SUCCESSFUL') status = 'completed';
+    else if (s === 'FAILED' || s === 'EXPIRED') status = 'failed';
+    else if (s === 'CREATED' || s === 'PENDING') status = 'pending';
+    return { status, raw: data };
+  },
+};
+
 export const PaymentsService = {
 
   async initiate(dto: InitiatePaymentDto): Promise<Payment> {
@@ -322,7 +391,20 @@ export const PaymentsService = {
     // hébergée CinetPay (MoMo/Orange/carte) puis revient sur le callback.
     let cinetpayRedirectUrl: string | null = null;
 
-    if (dto.method === 'mobile_money' && dto.provider === 'cinetpay') {
+    if (dto.method === 'mobile_money' && dto.provider === 'fapshi') {
+      if (!dto.phone) throw ApiError.badRequest('Numéro de téléphone requis pour Fapshi');
+      // Push USSD direct : le client valide sur son téléphone
+      result = await FapshiAdapter.initiate(
+        order.totalAmount, dto.phone, ref,
+        {
+          name:  [order.buyer?.firstName, order.buyer?.lastName].filter(Boolean).join(' ') || undefined,
+          email: order.buyer?.email,
+          message: `Commande ${(order as any).orderNumber ?? order.id.slice(0, 8)}`,
+        },
+      );
+      // Tag provider : le polling /status doit interroger Fapshi (pas MTN)
+      result.rawResponse = { ...((result.rawResponse as object) ?? {}), provider: 'fapshi' };
+    } else if (dto.method === 'mobile_money' && dto.provider === 'cinetpay') {
       // Pas de numéro requis : le client saisit son numéro chez CinetPay
       const r = await CinetPayAdapter.initiate(
         order.totalAmount,
@@ -391,6 +473,29 @@ export const PaymentsService = {
     }
 
     return saved;
+  },
+
+  /** Fapshi (webhook OU polling) : re-vérification via /payment-status. */
+  async handleFapshiNotify(transId: string): Promise<Payment> {
+    const payment = await paymentRepo().findOne({
+      where: { gatewayRef: transId },
+      relations: ['order'],
+    });
+    if (!payment) throw ApiError.notFound('Paiement Fapshi inconnu');
+    if (payment.status === 'completed') return payment; // idempotent
+
+    const { status, raw } = await FapshiAdapter.check(transId);
+    payment.status = status;
+    payment.gatewayResponse = { ...((payment.gatewayResponse as object) ?? {}), check: raw };
+
+    if (status === 'completed') {
+      payment.paidAt = new Date();
+      await orderRepo().update(payment.order.id, { status: 'confirmed' });
+      notifyOrderPaid(payment);
+    }
+    await paymentRepo().save(payment);
+    logger.info(`Fapshi ${transId} → ${status}`);
+    return payment;
   },
 
   /**
@@ -508,7 +613,10 @@ export const PaymentsService = {
       let gatewayStatus: PaymentStatus = payment.status;
 
       const isCinetpay = (payment.gatewayResponse as any)?.provider === 'cinetpay';
-      if (payment.method === 'mobile_money' && isCinetpay) {
+      const isFapshi = (payment.gatewayResponse as any)?.provider === 'fapshi';
+      if (payment.method === 'mobile_money' && isFapshi) {
+        gatewayStatus = (await FapshiAdapter.check(payment.gatewayRef)).status;
+      } else if (payment.method === 'mobile_money' && isCinetpay) {
         gatewayStatus = (await CinetPayAdapter.check(
           payment.gatewayRef, Number(payment.amount),
         )).status;
@@ -817,6 +925,29 @@ paymentsRouter.get('/callback/cinetpay', async (req: Request, res: Response, nex
     const tid = String(req.query.transaction_id ?? '');
     const payment = tid
       ? await PaymentsService.handleCinetpayNotify(tid)
+      : null;
+    res.json(ApiResponse.success(payment ? { status: payment.status } : { status: 'unknown' }));
+  } catch (e) { next(e); }
+});
+
+// Fapshi : webhook configurable dans le dashboard (POST, contient transId).
+// Re-vérification systématique via /payment-status (jamais confiance au push).
+paymentsRouter.post('/webhook/fapshi', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tid = req.body?.transId ?? req.body?.transaction_id ?? req.body?.data?.transId;
+    if (!tid) return res.status(200).json({ received: true });
+    await PaymentsService.handleFapshiNotify(String(tid));
+    res.status(200).json({ received: true });
+  } catch (e) {
+    logger.warn('Fapshi webhook error:', (e as Error).message);
+    res.status(200).json({ received: true });
+  }
+});
+paymentsRouter.get('/callback/fapshi', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tid = String(req.query.transId ?? req.query.transaction_id ?? '');
+    const payment = tid
+      ? await PaymentsService.handleFapshiNotify(tid)
       : null;
     res.json(ApiResponse.success(payment ? { status: payment.status } : { status: 'unknown' }));
   } catch (e) { next(e); }

@@ -81,6 +81,12 @@ const envSchema = z.object({
   CINETPAY_API_KEY:      z.string().optional(),
   CINETPAY_API_PASSWORD: z.string().optional(),
 
+  // Fapshi — agrégateur camerounais (direct-pay USSD). Sandbox par défaut ;
+  // prod : renommer en _PROD quand le service live est activé.
+  FAPSHI_BASE_URL_SANDBOX: z.string().optional(),
+  FAPSHI_API_KEY_SANDBOX:  z.string().optional(),
+  FAPSHI_API_USER_SANDBOX: z.string().optional(),
+
   // Services tiers (clés fournies — intégration à venir)
   GEOAPIFY_API_KEY:    z.string().optional(), // géocodage vendeurs + autocomplete
   OCR_API_KEY:         z.string().optional(), // lecture étiquettes/factures (V3)

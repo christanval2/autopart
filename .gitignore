@@ -9,3 +9,6 @@ desktop.ini
 # Divers
 *.log
 .tmp/
+
+# Build APK (trop volumineux pour GitHub)
+*.apk

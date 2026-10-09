@@ -1,21 +1,18 @@
 {
   "expo": {
     "name": "AutoParts Cameroun",
-    "slug": "autoparts-cm",
+    "slug": "autoparts",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "autoparts",
     "userInterfaceStyle": "automatic",
     "extra": {
       "eas": {
-        "projectId": "REMPLACER-PAR-LE-PROJECT-ID-EAS"
+        "projectId": "8471fe9b-1b1f-46dc-9192-b714e88abcf5"
       },
-      "googleClientIdAndroid": null,
-      "googleClientIdIOS": null
-    },
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#1A4D8F"
+      "googleClientIdAndroid": {},
+      "googleClientIdIOS": {},
+      "router": {}
     },
     "ios": {
       "supportsTablet": true,
@@ -28,7 +25,9 @@
       },
       "permissions": [
         "CAMERA",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -41,6 +40,7 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "owner": "varel14s-team"
   }
 }
