@@ -1,83 +1,37 @@
-# AutoParts Voice Agent
+# AutoParts Voice Agent — LiveKit + Groq (STT/LLM) + Piper (TTS)
 
-Agent vocal LiveKit + Groq pour la commande par appel.
+Agent vocal de commande : le client parle, AutoBot comprend et passe la commande.
+
+| Brique | Service | Modèle |
+|---|---|---|
+| STT (comprendre) | Groq | whisper-large-v3 (fr + pidgin) |
+| LLM (décider) | Groq | gpt-oss-20b (`GROQ_LLM_MODEL`) |
+| TTS (parler) | **Piper local** | fr_FR-siwis-medium (~60 Mo, 10× temps réel, zéro clé) |
 
 ## Installation
 
 ```bash
-python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # Configurer les clés
+python download_voices.py      # voix française Piper (~60 Mo, une fois)
+cp .env.example .env           # renseigner LIVEKIT_*, GROQ_API_KEY, BACKEND_URL
 ```
 
-## Démarrage
+## Lancement
 
 ```bash
-# Développement (redémarrage auto)
-python agent.py dev
-
-# Production
-python agent.py start
-
-# Docker
-docker build -t autoparts-voice-agent .
-docker run --env-file .env autoparts-voice-agent
+python agent.py dev     # développement
+python agent.py start   # production (connexion au cloud LiveKit)
 ```
 
-> ⚠️ L'agent s'enregistre comme **worker LiveKit** sous le nom
-> `autoparts-voice-agent`. Le backend (`src/modules/voice-order`) crée le
-> dispatch vers la room via `AgentDispatchClient.createDispatch()` quand un
-> client appelle `POST /api/v1/voice-order/session`. Il n'y a **plus de serveur
-> HTTP** à exposer : tant que ce worker tourne (avec les mêmes clés LiveKit
-> que le backend), l'agent rejoint automatiquement chaque room.
+Autres voix : `python download_voices.py --all` puis
+`PIPER_VOICE=voices/fr_FR-upmc-high.onnx python agent.py dev`
+(upmc = meilleure qualité, tom = voix masculine).
 
-## Architecture
+## Notes techniques
 
-```
-Client WebRTC
-    ↓ Audio (Opus/PCM)
-LiveKit Room  ← dispatch créé par le backend (AgentDispatchClient)
-    ↓ Track audio
-Voice Agent (ce worker, agent_name="autoparts-voice-agent")
-    ↓ Audio chunks
-Groq Whisper STT → texte
-    ↓
-Groq LLaMA 3.3 + Tool Calling
-    ↓ Appels outils
-AutoParts API REST (JWT utilisateur transmis via room.metadata)
-    ↓ Données
-LLaMA → réponse texte
-    ↓
-Groq PlayAI TTS → audio
-    ↓
-Client (entend la réponse)
-```
-
-## Identité & sécurité
-
-- À la création de la session, le backend place dans `room.metadata` :
-  `{"userId": "...", "authToken": "<JWT 15 min>"}`
-- L'agent utilise ce JWT en `Authorization: Bearer` pour passer la commande
-  **au nom du client** sur `POST /api/v1/voice-order/order` — il n'a jamais
-  accès aux mots de passe ni aux refresh tokens.
-- Le backend résout lui-même vendeurs (stock) et adresse par défaut du client :
-  l'agent ne manipule que des `variantId` + quantités.
-
-## Flux de commande type
-
-1. Client : "J'ai une Toyota Hilux 2018, je cherche des plaquettes de frein"
-2. Agent  : appelle `search_products("plaquettes de frein", "Toyota", "Hilux", 2018)`
-   → `GET /search/vehicle` (compatibilités) ou `GET /search` (full-text)
-3. Agent  : "J'ai trouvé 3 références : Bosch BP1234 à 45 000 XAF..." (avec variantId)
-4. Client : "Prends les Bosch"
-5. Agent  : appelle `add_to_cart(variant_id, ...)`
-6. Agent  : "Ajouté ! Voulez-vous passer la commande ?"
-7. Client : "Oui, MTN MoMo au 650 00 00 00"
-8. Agent  : appelle `confirm_order("+237650000000", "mtn_momo")`
-   → `POST /voice-order/order` (groupement par vendeur, adresse par défaut,
-     initiation Mobile Money)
-9. Agent  : "Commande ORD-2026-xxxx passée ! Confirmez sur votre téléphone."
-
-## Dépendances
-
-Voir `requirements.txt` : `livekit-agents[groq,silero]`, `requests`, `python-dotenv`.
+- `playai-tts` a été **retiré du catalogue Groq** — le TTS est passé en local
+  Piper (aucune clé, aucun coût, latence mesurée : 11× temps réel sur CPU).
+- `llama-3.3` a également été retiré du catalogue Groq — LLM sur
+  `gpt-oss-20b` (modifiable via `GROQ_LLM_MODEL`).
+- L'adaptateur `PiperTTS` suit l'API livekit-agents 1.8.5
+  (ChunkedStream + AudioEmitter PCM).

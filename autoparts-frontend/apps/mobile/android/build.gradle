@@ -22,3 +22,11 @@ allprojects {
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+// Redirige les builds natifs CMake/ninja hors du chemin utilisateur
+// (« steve 23 » + antivirus → ninja: manifest still dirty)
+subprojects { sub ->
+  if (sub.name.startsWith('react-native')) {
+    sub.buildDir = "C:/rnbuild/${sub.name}"
+  }
+}

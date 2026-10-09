@@ -1,12 +1,11 @@
 """
-AutoParts Voice Agent — LiveKit Agents + Groq
-=============================================
+AutoParts Voice Agent — LiveKit Agents + Groq (STT/LLM) + Piper (TTS)
+=====================================================================
 Commande vocale intelligente pour le marché camerounais.
 
 Installation :
-    pip install "livekit-agents[groq,silero,deepgram]~=1.0"
-    pip install livekit-plugins-groq
-    pip install requests python-dotenv
+    pip install -r requirements.txt
+    python download_voices.py   # voix française Piper (~60 Mo, une fois)
 
 Lancement :
     python agent.py dev     # développement
@@ -42,6 +41,95 @@ logger = logging.getLogger("autoparts-voice-agent")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000/api/v1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 AGENT_SECRET = os.getenv("VOICE_AGENT_SECRET", "change-me-in-prod")
+# Modèle LLM Groq (llama-3.3 a été retiré du catalogue : gpt-oss-20b vérifié dispo)
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-20b")
+# Voix Piper locale (TTS) : fichier .onnx téléchargé par download_voices.py
+PIPER_VOICE = os.getenv("PIPER_VOICE", os.path.join(os.path.dirname(__file__), "voices", "fr_FR-siwis-medium.onnx"))
+
+# ─── TTS Piper — voix française locale, aucune clé API ───────
+# Adaptateur au format livekit-agents : synthétise par phrase
+# (mesuré 10× temps réel sur CPU), émet des AudioFrame PCM 16 bits.
+from livekit.agents import tts as agent_tts
+from livekit import rtc
+
+
+class _PiperChunkedStream(agent_tts.ChunkedStream):
+    """Consomme le générateur Piper (1 chunk/phrase) dans un thread et
+    pousse le PCM brut via l'AudioEmitter (mime_type audio/pcm : le SDK
+    livekit-agents découpe lui-même en AudioFrames)."""
+
+    def __init__(self, tts: "PiperTTS", text: str):
+        from livekit.agents.types import APIConnectOptions
+        super().__init__(tts=tts, input_text=text, conn_options=APIConnectOptions(timeout=60.0))
+        self._tts = tts
+        self._text = text
+
+    async def _run(self, output_emitter) -> None:
+        import asyncio
+        from livekit.agents.utils import shortuuid
+
+        # initialize doit précéder tout push (sur la boucle asyncio)
+        output_emitter.initialize(
+            request_id=shortuuid("req_"),
+            sample_rate=self._tts._sample_rate,
+            num_channels=1,
+            mime_type="audio/pcm",  # PCM 16 bits mono brut
+        )
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def produce():
+            try:
+                for chunk in self._tts._voice.synthesize(self._text, syn_config=self._tts._config):
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk.audio_int16_bytes)
+            except Exception as e:  # propagé au consommateur
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            else:
+                loop.call_soon_threadsafe(queue.put_nowait, None)  # fin
+
+        producer = asyncio.create_task(asyncio.to_thread(produce))
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                output_emitter.push(item)
+        finally:
+            await producer  # joint le thread (déjà terminé en pratique)
+
+
+class PiperTTS(agent_tts.TTS):
+    """Voix française hors-ligne (rhasspy/piper-voices) — zéro coût, zéro clé.
+
+    Par défaut : fr_FR-siwis-medium (~60 Mo, mesuré 10× temps réel sur CPU).
+    Alternatives : fr_FR-upmc-high, fr_FR-tom-medium (voir download_voices.py).
+    API piper-tts >= 1.3 : PiperVoice.synthesize(text, syn_config) → chunks.
+    """
+
+    def __init__(self, voice_path: Optional[str] = None, length_scale: float = 1.0):
+        super().__init__(
+            capabilities=agent_tts.TTSCapabilities(streaming=False),
+            sample_rate=22050,
+            num_channels=1,
+        )
+        self._voice_path = voice_path or PIPER_VOICE
+        if not os.path.exists(self._voice_path):
+            raise RuntimeError(
+                f"Voix Piper introuvable : {self._voice_path}. "
+                "Lancez : python download_voices.py"
+            )
+        from piper import PiperVoice, SynthesisConfig  # import tardif (gros paquet)
+
+        self._voice = PiperVoice.load(self._voice_path)
+        self._config = SynthesisConfig(length_scale=length_scale)
+        # Le sample rate réel du modèle prime sur la valeur annoncée
+        self._sample_rate = getattr(getattr(self._voice, "config", None), "sample_rate", 22050)
+
+    def synthesize(self, text, *, conn_options=None):
+        return _PiperChunkedStream(self, text)
 
 # ─── Session de commande en cours ────────────────────────────
 class OrderSession:
@@ -314,20 +402,17 @@ async def entrypoint(ctx: JobContext):
         language="fr",   # Français par défaut, Whisper détecte aussi le pidgin
     )
 
-    # LLM : Groq LLaMA 3.3 70B (très rapide)
+    # LLM : Groq (gpt-oss par défaut — llama-3.3 retiré du catalogue)
     lm = livekit_groq.LLM(
-        model="llama-3.3-70b-versatile",
+        model=GROQ_LLM_MODEL,
         temperature=0.3,
     )
 
     # VAD : Silero (Voice Activity Detection) — détecte quand le client parle
     vad = silero.VAD.load()
 
-    # TTS : Groq PlayAI TTS (voix francophone naturelle)
-    tts = livekit_groq.TTS(
-        model="playai-tts",
-        voice="Celeste-PlayAI",  # Voix féminine française claire
-    )
+    # TTS : Piper — voix française LOCALE (playai-tts n'existe plus chez Groq)
+    tts = PiperTTS()
 
     agent_session = AgentSession(
         vad=vad,
