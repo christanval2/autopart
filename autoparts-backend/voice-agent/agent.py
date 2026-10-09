@@ -419,9 +419,11 @@ async def entrypoint(ctx: JobContext):
         stt=stt,
         llm=lm,
         tts=tts,
-        turn_detection=agent_llm.TurnDetection(
-            silence_duration_ms=800,   # Attente 800ms de silence avant de répondre
-            threshold=0.5,
+        # livekit-agents >= 1.8 : détection de tour par VAD (Silero).
+        # 800 ms de silence = fin de parole du client.
+        turn_detection='vad',
+        turn_handling=agents.TurnHandlingOptions(
+            min_endpointing_delay=0.8,  # pause 0,8 s avant de répondre
         ),
     )
 
